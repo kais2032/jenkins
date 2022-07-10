@@ -1,0 +1,58 @@
+node{
+    
+    try{
+        stage("Email notification"){
+           mail bcc: '', body: '''Hi kais
+new jenkins pipeline of erp front is runing''', cc: '', from: '', replyTo: '', subject: 'Jenkins job', to: 'kais2032@gmail.com'
+        }
+      
+    stage("Scm checkout"){
+        git 'https://github.com/masterkais/ERP_Front.git'
+    }
+    stage("clearing old container"){
+        sh '''echo ">>>>>>>>> Start Clearing old containers "
+if docker ps -a | grep "erpfront*" | awk \'{print $1}\' | xargs docker rm -f; then
+    printf \'Clearing old containers done succeeded\\n\'
+else
+    printf \'Clearing old containers failed\\n\'
+fi'''
+    }
+    stage("clearing old image"){
+        sh '''echo ">>>>>>>>> Start Clearing old docker images"
+if docker images -a | grep "kais2032/erpfront*" | awk \'{print $1":"$2}\' | xargs docker rmi -f; then
+    printf \'Clearing old images succeeded\\n\'
+else
+    printf \'Clearing old images failed\\n\'
+fi'''
+    }
+     stage("Install package"){
+        sh 'npm install'
+    }
+    stage("Build"){
+        sh "npm run build"
+    }
+    stage("Copy"){
+        sh '''pwd
+              ls -ltr
+              scp dist/* C:/wamp/www'''
+    }
+     stage("Build docker image"){
+        sh "docker build -t  kais2032/erpfront$BUILD_NUMBER ."
+    }
+    stage("Push Docker images"){
+     withCredentials([string(credentialsId: 'docker-pwd', variable: 'dockerhubpassword')]) {
+        sh "docker login -u kais2032 -p ${dockerhubpassword}"    
+}
+sh "docker push kais2032/erpfront$BUILD_NUMBER "
+    }
+    stage("run container"){
+        sh "docker run -d -p 4200:4200 --name erpfront$BUILD_NUMBER --network mynetwork  kais2032/erpfront$BUILD_NUMBER"
+    }
+    stage("Notify "){
+        mail bcc: '', body:" jenkins pipeline sucess", from: '', replyTo: '', subject: 'Jenkins job fails', to: 'kais2032@gmail.com'
+    }
+     
+    }catch(err){
+  mail bcc: '', body:"${err}", from: '', replyTo: '', subject: 'Jenkins job fails', to: 'kais2032@gmail.com'
+   }
+}
