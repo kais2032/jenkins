@@ -1,0 +1,73 @@
+node{
+    
+    try{
+        stage("Email notification"){
+           mail bcc: '', body: '''Hi kais
+new jenkins pipeline is runing''', cc: '', from: '', replyTo: '', subject: 'Jenkins job', to: 'kais2032@gmail.com'
+        }
+      
+    stage("Scm checkout"){
+        git 'https://github.com/masterkais/ERP_Back.git'
+    }
+    stage("clearing old container"){
+        sh '''if docker ps -a | grep "erpback*" | awk \'{print $1}\' | xargs docker rm -f; then
+    printf \'Clearing old containers done succeeded\\n\'
+else
+    printf \'Clearing old containers failed\\n\'
+fi'''
+    }
+    stage("clearing old image"){
+        sh '''echo ">>>>>>>>> Start Clearing old docker images"
+if docker images -a | grep "kais2032/erpback*" | awk \'{print $1":"$2}\' | xargs docker rmi -f; then
+    printf \'Clearing old images succeeded\\n\'
+else
+    printf \'Clearing old images failed\\n\'
+fi'''
+    }
+    stage("Restart mysql server"){
+        sh 'docker rm -f mysql'
+        sh 'docker run --name mysql -p 3306:3306 -v monvolume:/var/lib/mysql -d -e MYSQL_ALLOW_EMPTY_PASSWORD=1 mysql'
+    }
+    stage("Configuration network"){
+        
+    }
+     stage("run container config server"){
+        sh "docker run -d -p 8888:8888 --name server-config-erp --network mynetwork kais2032/server-config-erp"
+    }
+    stage("run container eureka"){
+        sh "docker run -d -p 9102:9102 --name eureka-server-erp --network mynetwork  -e eureka.client.serviceUrl.defaultZone=http://192.168.1.64:9102/eureka/ kais2032/eureka-server-erp"
+    }
+     stage("Mvn package"){
+        def mvnHome = tool name: 'maven-3.8.4', type: 'maven'
+        def mvnCMD = "C:/Users/ASUS/.jenkins/tools/hudson.tasks.Maven_MavenInstallation/maven-3.8.4/bin/mvn"
+        sh "${mvnCMD} clean install"
+    }
+    stage("Build docker image"){
+        sh "docker build -t  kais2032/erpback$BUILD_NUMBER ."
+    }
+    stage("Push Docker images"){
+     withCredentials([string(credentialsId: 'docker-pwd', variable: 'dockerhubpassword')]) {
+        sh "docker login -u kais2032 -p ${dockerhubpassword}"    
+}
+sh "docker push kais2032/erpback$BUILD_NUMBER "
+    }
+    stage("run container"){
+        sh "docker run -d -p 8081:8081 --name erpback$BUILD_NUMBER --network mynetwork -e spring.cloud.config.uri=http://192.168.1.64:8888  -e eureka.client.serviceUrl.defaultZone=http://192.168.1.64:9102/eureka/   -e spring.datasource.url=jdbc:mysql://192.168.1.64:3306/medation?createDatabaseIfNotExist=true kais2032/erpback$BUILD_NUMBER"
+    }
+    stage("run container gateway"){
+        sh "docker run -d -p 9103:9103 --name gateway-server-erp --network mynetwork  -e eureka.client.serviceUrl.defaultZone=http://192.168.1.64:9102/eureka/ kais2032/gateway-server-erp"
+    }
+     stage("run container hystirix dashboard"){
+        sh "docker run -d -p 9104:9104 --name hysterix-dashboard-server --network mynetwork  -e eureka.client.serviceUrl.defaultZone=http://192.168.1.64:9102/eureka/ kais2032/hysterix-dashboard-server"
+    }
+     stage("run container spring admin"){
+        sh "docker run -d -p 9105:9105 --name spring-admin --network mynetwork  -e eureka.client.serviceUrl.defaultZone=http://192.168.1.64/eureka/ kais2032/spring-admin"
+    }
+    stage("Notify "){
+        mail bcc: '', body:" jenkins pipeline sucess", from: '', replyTo: '', subject: 'Jenkins job fails', to: 'kais2032@gmail.com'
+    }
+     
+    }catch(err){
+  mail bcc: '', body:"${err}", from: '', replyTo: '', subject: 'Jenkins job fails', to: 'kais2032@gmail.com'
+   }
+}
